@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -31,6 +32,7 @@ canvas.torch-cursor { cursor: none; }
 </head>
 <body>
 <canvas id="mainCanvas"></canvas>
+
 <script>
 const canvas = document.getElementById("mainCanvas");
 const ctx = canvas.getContext("2d");
@@ -38,76 +40,699 @@ const buffer = document.createElement("canvas");
 const b = buffer.getContext("2d");
 const darknessCanvas = document.createElement("canvas");
 const darknessCtx = darknessCanvas.getContext("2d");
+
 let V_WIDTH = 320, V_HEIGHT = 240;
 let currentState = "FLOATING";
-let torchTaken = false, flashlightOn = true, torchAnimation = 0;
-let torchX = 0, torchY = 0, mouseX = 160, mouseY = 120;
+
+let torchTaken = false;
+let flashlightOn = true;
+let torchAnimation = 0;
+let torchX = 0, torchY = 0;
+let mouseX = 160, mouseY = 120;
+
 let warpTime = 0;
 const WARP_DURATION = 120;
-let switchActivated = false, switchFlickering = false;
-let switchFlickerTime = 0, globalLight = false, globalLightFade = 0;
+
+let switchActivated = false;
+let switchFlickering = false;
+let switchFlickerTime = 0;
+let globalLight = false;
+let globalLightFade = 0;
+
 function resize() {
-  canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-  V_HEIGHT = 240; V_WIDTH = Math.max(1, Math.round(240 * canvas.width / canvas.height));
-  buffer.width = V_WIDTH; buffer.height = V_HEIGHT;
-  darknessCanvas.width = V_WIDTH; darknessCanvas.height = V_HEIGHT;
-  if (!torchTaken) { torchX = V_WIDTH - 18; torchY = 24; }
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  V_HEIGHT = 240;
+  V_WIDTH = Math.max(1, Math.round(240 * canvas.width / canvas.height));
+  buffer.width = V_WIDTH;
+  buffer.height = V_HEIGHT;
+  darknessCanvas.width = V_WIDTH;
+  darknessCanvas.height = V_HEIGHT;
+
+  if (!torchTaken) {
+    torchX = V_WIDTH - 18;
+    torchY = 24;
+  }
 }
-window.addEventListener("resize", resize); resize();
-function centerX() { return Math.floor(V_WIDTH / 2); }
+window.addEventListener("resize", resize);
+resize();
+
+function centerX() {
+  return Math.floor(V_WIDTH / 2);
+}
+
+// ESTRELLAS
 class Star {
   constructor() { this.reset(); }
-  reset() { this.x=Math.random()*V_WIDTH; this.y=Math.random()*V_HEIGHT; this.speed=.04+Math.random()*.15; this.brightness=Math.random()*6; this.type=Math.random()>.7?"cross":"dot"; }
-  update() { this.y-=this.speed; if(this.y < -5){this.y=V_HEIGHT+5;this.x=Math.random()*V_WIDTH;} this.brightness+=.05; }
-  draw(c) { const a=.35+Math.sin(this.brightness)*.35; c.fillStyle=`rgba(255,255,255,${a})`; const x=Math.round(this.x),y=Math.round(this.y); c.fillRect(x,y,1,1); if(this.type==="cross"){c.fillRect(x-1,y,3,1);c.fillRect(x,y-1,1,3);} }
+  reset() {
+    this.x = Math.random() * V_WIDTH;
+    this.y = Math.random() * V_HEIGHT;
+    this.speed = .04 + Math.random() * .15;
+    this.brightness = Math.random() * 6;
+    this.type = Math.random() > .7 ? "cross" : "dot";
+  }
+  update() {
+    this.y -= this.speed;
+    if (this.y < -5) {
+      this.y = V_HEIGHT + 5;
+      this.x = Math.random() * V_WIDTH;
+    }
+    this.brightness += .05;
+  }
+  draw(c) {
+    const a = .35 + Math.sin(this.brightness) * .35;
+    c.fillStyle = `rgba(255,255,255,${a})`;
+    const x = Math.round(this.x), y = Math.round(this.y);
+    c.fillRect(x, y, 1, 1);
+    if (this.type === "cross") {
+      c.fillRect(x - 1, y, 3, 1);
+      c.fillRect(x, y - 1, 1, 3);
+    }
+  }
 }
-const stars=Array.from({length:90},()=>new Star());
-const letter={
- x:V_WIDTH/2,y:V_HEIGHT/2,vx:.25,vy:.18,width:24,height:18,time:0,
- update(){
-  if(currentState==="FLOATING"){this.time+=.04;this.x+=this.vx;this.y+=this.vy+Math.sin(this.time)*.1;if(this.x<20||this.x>V_WIDTH-20)this.vx*=-1;if(this.y<20||this.y>V_HEIGHT-20)this.vy*=-1;}
-  else if(currentState==="MOVING_TO_CENTER"){const tx=V_WIDTH/2,ty=V_HEIGHT/2;this.x+=(tx-this.x)*.12;this.y+=(ty-this.y)*.12;if(Math.hypot(tx-this.x,ty-this.y)<1){this.x=tx;this.y=ty;currentState="WARP_TRANSITION";warpTime=0;}}
- },
- draw(c){
-  c.save();c.translate(Math.round(this.x),Math.round(this.y));const w=this.width,h=this.height,hw=w/2,hh=h/2;
-  c.fillStyle="rgba(180,70,100,.3)";c.fillRect(-hw+2,-hh+3,w,h);c.fillStyle="#fff0f3";c.fillRect(-hw,-hh,w,h);
-  c.fillStyle="#6a2c3e";c.fillRect(-hw,-hh,w,1);c.fillRect(-hw,hh-1,w,1);c.fillRect(-hw,-hh,1,h);c.fillRect(hw-1,-hh,1,h);
-  c.fillStyle="#f7cad0";for(let i=0;i<hw;i++){c.fillRect(-hw+i,-hh+Math.floor(i*hh/hw),1,1);c.fillRect(hw-1-i,-hh+Math.floor(i*hh/hw),1,1);}
-  c.fillStyle=Math.sin(this.time*3)>0?"#ff4d6d":"#e63946";
-  const heart=[[0,1,1,0,1,1,0],[1,1,1,1,1,1,1],[1,1,1,1,1,1,1],[0,1,1,1,1,1,0],[0,0,1,1,1,0,0],[0,0,0,1,0,0,0]];
-  heart.forEach((row,y)=>row.forEach((v,x)=>{if(v)c.fillRect(-3+x,-3+y,1,1);}));c.restore();
- }
+const stars = Array.from({length: 90}, () => new Star());
+
+// CARTA
+const letter = {
+  x: V_WIDTH / 2, y: V_HEIGHT / 2,
+  vx: .25, vy: .18,
+  width: 24, height: 18, time: 0,
+
+  update() {
+    if (currentState === "FLOATING") {
+      this.time += .04;
+      this.x += this.vx;
+      this.y += this.vy + Math.sin(this.time) * .1;
+      if (this.x < 20 || this.x > V_WIDTH - 20) this.vx *= -1;
+      if (this.y < 20 || this.y > V_HEIGHT - 20) this.vy *= -1;
+    } else if (currentState === "MOVING_TO_CENTER") {
+      const tx = V_WIDTH / 2, ty = V_HEIGHT / 2;
+      this.x += (tx - this.x) * .12;
+      this.y += (ty - this.y) * .12;
+      if (Math.hypot(tx - this.x, ty - this.y) < 1) {
+        this.x = tx;
+        this.y = ty;
+        currentState = "WARP_TRANSITION";
+        warpTime = 0;
+      }
+    }
+  },
+
+  draw(c) {
+    c.save();
+    c.translate(Math.round(this.x), Math.round(this.y));
+    const w = this.width, h = this.height, hw = w / 2, hh = h / 2;
+
+    c.fillStyle = "rgba(180,70,100,.3)";
+    c.fillRect(-hw + 2, -hh + 3, w, h);
+    c.fillStyle = "#fff0f3";
+    c.fillRect(-hw, -hh, w, h);
+
+    c.fillStyle = "#6a2c3e";
+    c.fillRect(-hw, -hh, w, 1);
+    c.fillRect(-hw, hh - 1, w, 1);
+    c.fillRect(-hw, -hh, 1, h);
+    c.fillRect(hw - 1, -hh, 1, h);
+
+    c.fillStyle = "#f7cad0";
+    for (let i = 0; i < hw; i++) {
+      c.fillRect(-hw + i, -hh + Math.floor(i * hh / hw), 1, 1);
+      c.fillRect(hw - 1 - i, -hh + Math.floor(i * hh / hw), 1, 1);
+    }
+
+    c.fillStyle = Math.sin(this.time * 3) > 0 ? "#ff4d6d" : "#e63946";
+    const heart = [
+      [0,1,1,0,1,1,0],
+      [1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1],
+      [0,1,1,1,1,1,0],
+      [0,0,1,1,1,0,0],
+      [0,0,0,1,0,0,0]
+    ];
+    heart.forEach((row,y) => row.forEach((v,x) => {
+      if (v) c.fillRect(-3+x, -3+y, 1, 1);
+    }));
+    c.restore();
+  }
 };
-function drawWarpEffect(c){
- warpTime++;const p=Math.min(1,warpTime/WARP_DURATION);if(p>=1){currentState="DARK_ROOM";return;}
- const src=c.getImageData(0,0,V_WIDTH,V_HEIGHT),dst=c.createImageData(V_WIDTH,V_HEIGHT),cx=V_WIDTH/2,cy=V_HEIGHT/2;
- for(let y=0;y<V_HEIGHT;y++)for(let x=0;x<V_WIDTH;x++){const dx=x-cx,dy=y-cy,dist=Math.hypot(dx,dy);let angle=Math.atan2(dy,dx);const offset=Math.sin(dist/18-p*10)*15*Math.sin(p*Math.PI);angle+=p*6*(1-Math.min(1,dist/160));const sx=Math.round(cx+Math.cos(angle)*(dist+offset)),sy=Math.round(cy+Math.sin(angle)*(dist+offset)),di=(y*V_WIDTH+x)*4;if(sx>=0&&sx<V_WIDTH&&sy>=0&&sy<V_HEIGHT){const si=(sy*V_WIDTH+sx)*4,dark=1-Math.pow(p,1.5);dst.data[di]=src.data[si]*dark;dst.data[di+1]=src.data[si+1]*dark;dst.data[di+2]=src.data[si+2]*dark;dst.data[di+3]=255;}else dst.data[di+3]=255;}
- c.putImageData(dst,0,0);if(p>.6){const radius=Math.hypot(V_WIDTH,V_HEIGHT)*(1-(p-.6)/.4);c.globalCompositeOperation="destination-in";c.beginPath();c.arc(cx,cy,radius,0,Math.PI*2);c.fill();c.globalCompositeOperation="source-over";}
+
+// PORTAL
+function drawWarpEffect(c) {
+  warpTime++;
+  const p = Math.min(1, warpTime / WARP_DURATION);
+  if (p >= 1) {
+    currentState = "DARK_ROOM";
+    return;
+  }
+
+  const src = c.getImageData(0, 0, V_WIDTH, V_HEIGHT);
+  const dst = c.createImageData(V_WIDTH, V_HEIGHT);
+  const cx = V_WIDTH / 2, cy = V_HEIGHT / 2;
+
+  for (let y = 0; y < V_HEIGHT; y++) {
+    for (let x = 0; x < V_WIDTH; x++) {
+      const dx = x - cx, dy = y - cy;
+      const dist = Math.hypot(dx, dy);
+      let angle = Math.atan2(dy, dx);
+      const offset = Math.sin(dist / 18 - p * 10) * 15 * Math.sin(p * Math.PI);
+      angle += p * 6 * (1 - Math.min(1, dist / 160));
+      const sx = Math.round(cx + Math.cos(angle) * (dist + offset));
+      const sy = Math.round(cy + Math.sin(angle) * (dist + offset));
+      const di = (y * V_WIDTH + x) * 4;
+
+      if (sx >= 0 && sx < V_WIDTH && sy >= 0 && sy < V_HEIGHT) {
+        const si = (sy * V_WIDTH + sx) * 4;
+        const dark = 1 - Math.pow(p, 1.5);
+        dst.data[di] = src.data[si] * dark;
+        dst.data[di+1] = src.data[si+1] * dark;
+        dst.data[di+2] = src.data[si+2] * dark;
+        dst.data[di+3] = 255;
+      } else {
+        dst.data[di+3] = 255;
+      }
+    }
+  }
+  c.putImageData(dst, 0, 0);
+
+  if (p > .6) {
+    const radius = Math.hypot(V_WIDTH, V_HEIGHT) * (1 - (p - .6) / .4);
+    c.globalCompositeOperation = "destination-in";
+    c.beginPath();
+    c.arc(cx, cy, radius, 0, Math.PI * 2);
+    c.fill();
+    c.globalCompositeOperation = "source-over";
+  }
 }
-function rect(c,x,y,w,h,color){c.fillStyle=color;c.fillRect(Math.round(x),Math.round(y),w,h);}
-function outline(c,x,y,w,h,color){rect(c,x,y,w,1,color);rect(c,x,y+h-1,w,1,color);rect(c,x,y,1,h,color);rect(c,x+w-1,y,1,h,color);}
-function drawCheckerFloor(c){const tile=12,floorStart=132;rect(c,0,floorStart-3,V_WIDTH,3,"#17151b");for(let y=floorStart;y<V_HEIGHT;y+=tile)for(let x=0;x<V_WIDTH;x+=tile){const alt=(Math.floor(x/tile)+Math.floor(y/tile))%2;rect(c,x,y,tile,tile,alt===0?"#eeeeee":"#171717");}rect(c,0,132,V_WIDTH,2,"#080808");rect(c,0,232,V_WIDTH,8,"#090909");}
-function drawWall(c){const cx=centerX();rect(c,0,0,V_WIDTH,134,"#342b32");rect(c,0,0,V_WIDTH,8,"#17151c");rect(c,0,12,V_WIDTH,3,"#493b43");rect(c,0,119,V_WIDTH,5,"#17141a");rect(c,0,124,V_WIDTH,8,"#514047");for(let x=8;x<V_WIDTH;x+=32){rect(c,x,15,2,104,"#29232a");rect(c,x+2,15,1,104,"#44343c");}rect(c,0,0,5,134,"#17141a");rect(c,V_WIDTH-5,0,5,134,"#17141a");rect(c,cx-19,8,38,3,"#777078");rect(c,cx-14,11,28,2,"#d4c2a1");}
-function drawPoster(c,x,y,type){rect(c,x+2,y+2,24,31,"#151219");rect(c,x,y,24,31,"#d4c6a5");outline(c,x,y,24,31,"#493b35");rect(c,x+3,y+3,18,3,"#8b3e43");if(type===0){rect(c,x+7,y+10,10,10,"#75452d");rect(c,x+6,y+8,12,5,"#53301f");rect(c,x+8,y+14,2,2,"#fff");rect(c,x+14,y+14,2,2,"#fff");rect(c,x+9,y+15,1,1,"#111");rect(c,x+15,y+15,1,1,"#111");rect(c,x+9,y+19,7,2,"#e9d0a5");rect(c,x+11,y+6,3,3,"#27202a");}else{rect(c,x+7,y+11,10,10,"#514a8d");rect(c,x+7,y+5,3,8,"#514a8d");rect(c,x+14,y+5,3,8,"#514a8d");rect(c,x+8,y+14,2,2,"#fff");rect(c,x+14,y+14,2,2,"#fff");rect(c,x+10,y+19,5,2,"#d9b5b5");}rect(c,x+4,y+25,16,1,"#4d403b");rect(c,x+6,y+27,12,1,"#4d403b");}
-function drawDoor(c,x,y,w,h,side){rect(c,x-3,y-3,w+6,h+6,"#111015");rect(c,x,y,w,h,"#51444a");rect(c,x+3,y+3,w-6,h-6,"#17151c");rect(c,x+6,y+5,w-12,h-10,"#40363b");rect(c,x+9,y+8,w-18,h-16,"#29242b");outline(c,x+9,y+11,w-18,20,"#63535a");outline(c,x+9,y+36,w-18,20,"#63535a");rect(c,x+4,y+h-13,w-8,3,"#85818a");rect(c,x+6,y+h-10,w-12,2,"#302a30");if(side==="left")rect(c,x+w-10,y+43,3,6,"#d3b66c");else rect(c,x+7,y+43,3,6,"#d3b66c");rect(c,x+w/2-3,y+5,6,3,"#a22b32");rect(c,x+3,y+3,2,2,"#a49ba0");rect(c,x+w-5,y+3,2,2,"#a49ba0");}
-function drawFoxy(c,cx,cy){rect(c,cx-32,cy-19,64,39,"#090b12");rect(c,cx-34,cy-22,7,44,"#61242b");rect(c,cx+27,cy-22,7,44,"#61242b");rect(c,cx-30,cy-18,5,35,"#8c3437");rect(c,cx+25,cy-18,5,35,"#8c3437");rect(c,cx-16,cy-13,32,29,"#873c27");rect(c,cx-19,cy-9,38,20,"#9f4a2d");rect(c,cx-17,cy-23,9,15,"#7c3026");rect(c,cx-15,cy-21,5,10,"#c36c43");rect(c,cx+8,cy-23,9,15,"#7c3026");rect(c,cx+10,cy-21,5,10,"#c36c43");rect(c,cx-17,cy-13,12,12,"#17151b");rect(c,cx-19,cy-11,14,3,"#17151b");rect(c,cx-9,cy-3,3,7,"#17151b");let lx=mouseX-cx,ly=mouseY-cy,d=Math.max(1,Math.hypot(lx,ly));lx=lx/d*3;ly=ly/d*3;rect(c,cx+4,cy-11,10,10,"#f0dfbd");rect(c,cx+7+Math.round(lx),cy-8+Math.round(ly),4,5,"#d52d20");rect(c,cx+8+Math.round(lx),cy-7+Math.round(ly),2,2,"#fff");rect(c,cx-5,cy+3,19,9,"#d5a17a");rect(c,cx+1,cy+1,7,5,"#262027");rect(c,cx+2,cy+2,5,3,"#09090b");rect(c,cx-4,cy+12,5,4,"#eee4ce");rect(c,cx+3,cy+12,5,4,"#eee4ce");rect(c,cx+10,cy+12,4,3,"#eee4ce");rect(c,cx-16,cy+4,4,6,"#59291f");rect(c,cx+15,cy+5,4,6,"#59291f");rect(c,cx-13,cy+17,26,7,"#683027");}
-function drawWindow(c){const cx=centerX(),cy=64;rect(c,cx-39,cy-26,78,55,"#111016");rect(c,cx-36,cy-23,72,49,"#77717a");rect(c,cx-33,cy-20,66,43,"#080b12");drawFoxy(c,cx,cy-1);outline(c,cx-39,cy-26,78,55,"#a59a9a");rect(c,cx-40,cy-27,80,3,"#c4b6ad");rect(c,cx-40,cy+26,80,3,"#71636b");rect(c,cx-2,cy-23,3,47,"#77717a");}
-function drawCabinet(c,x,y,w,h){rect(c,x+2,y+3,w,h,"#100f14");rect(c,x,y,w,h,"#504044");rect(c,x+3,y+3,w-6,h-6,"#342a30");rect(c,x+4,y+4,w-8,3,"#78605b");outline(c,x+5,y+10,w-10,14,"#17141a");outline(c,x+5,y+29,w-10,14,"#17141a");rect(c,x+w/2-2,y+16,4,2,"#c6b28b");rect(c,x+w/2-2,y+35,4,2,"#c6b28b");rect(c,x+4,y+h,4,5,"#17151b");rect(c,x+w-8,y+h,4,5,"#17151b");}
-function drawSmallTable(c,x,y){rect(c,x,y,32,4,"#886344");rect(c,x+2,y+4,28,2,"#4d3329");rect(c,x+3,y+6,3,13,"#292027");rect(c,x+26,y+6,3,13,"#292027");rect(c,x+10,y-5,7,5,"#ded5c5");rect(c,x+17,y-4,3,3,"#ded5c5");rect(c,x+11,y-4,5,2,"#372a2c");}
-function drawPhone(c,x,y){rect(c,x,y+7,18,9,"#17151b");rect(c,x+2,y+4,14,5,"#3c3b40");rect(c,x+1,y+1,16,3,"#17151b");rect(c,x+2,y,3,4,"#252329");rect(c,x+13,y,3,4,"#252329");for(let yy=0;yy<2;yy++)for(let xx=0;xx<3;xx++)rect(c,x+4+xx*4,y+8+yy*3,2,1,"#b6a6a0");rect(c,x+17,y+2,2,2,"#111");rect(c,x+19,y+4,2,5,"#111");}
-function drawDesk(c){const cx=centerX();rect(c,cx-61,188,122,8,"#09090c");rect(c,cx-49,181,6,39,"#302329");rect(c,cx+43,181,6,39,"#302329");rect(c,cx-57,178,114,34,"#4a302b");rect(c,cx-54,181,108,27,"#694537");rect(c,cx-59,174,118,6,"#a8794f");rect(c,cx-59,174,118,2,"#d3a16b");outline(c,cx-43,185,29,15,"#2b2025");outline(c,cx+14,185,29,15,"#2b2025");rect(c,cx-31,191,5,2,"#b49a70");rect(c,cx+26,191,5,2,"#b49a70");drawPhone(c,cx-39,157);rect(c,cx-9,166,18,7,"#e0d6c2");rect(c,cx-7,168,13,1,"#918b83");rect(c,cx-6,170,10,1,"#918b83");rect(c,cx+17,166,2,9,"#d7a33c");rect(c,cx+17,164,2,2,"#a94b3b");rect(c,cx+26,151,16,3,"#34343a");rect(c,cx+32,145,4,8,"#55565b");rect(c,cx+27,147,13,3,"#55565b");rect(c,cx+32,148,4,4,"#17171d");rect(c,cx-17,202,34,7,"#25202a");rect(c,cx-13,208,26,17,"#39303a");rect(c,cx-18,225,36,4,"#17151b");}
-function getSwitchPosition(){return{x:centerX()+78,y:105};}
-function drawLightSwitch(c){const s=getSwitchPosition();rect(c,s.x-5,s.y-8,12,17,"#16131a");rect(c,s.x-4,s.y-7,10,15,"#b1a5a0");outline(c,s.x-4,s.y-7,10,15,"#393038");let lit=globalLight;if(switchFlickering)lit=Math.floor(switchFlickerTime/3)%2===0;if(lit)rect(c,s.x-1,s.y-5,4,8,"#fff1a8");else{rect(c,s.x-1,s.y-5,4,8,"#494149");rect(c,s.x,s.y-4,2,4,"#b7a9a2");}rect(c,s.x-1,s.y-11,4,2,switchFlickering?(lit?"#fff5bd":"#742d30"):(globalLight?"#ffeaa0":"#742d30"));}
-function drawOffice(c){const cx=centerX();rect(c,0,0,V_WIDTH,V_HEIGHT,"#17141b");drawWall(c);drawDoor(c,7,46,34,78,"left");drawDoor(c,V_WIDTH-41,46,34,78,"right");drawPoster(c,cx-91,38,0);drawPoster(c,cx+65,38,1);drawWindow(c);drawCabinet(c,48,104,31,39);drawCabinet(c,V_WIDTH-79,104,31,39);drawSmallTable(c,49,151);drawSmallTable(c,V_WIDTH-81,151);drawCheckerFloor(c);drawDesk(c);drawLightSwitch(c);rect(c,cx-5,132,10,2,"#222027");rect(c,0,130,4,10,"#16131a");rect(c,V_WIDTH-4,130,4,10,"#16131a");}
-function drawTorch(c,x,y,scale=.65,lit=true){c.save();c.translate(Math.round(x),Math.round(y));c.scale(scale,scale);rect(c,-2,1,5,15,"#603719");rect(c,-1,3,2,11,"#a86b32");rect(c,-3,13,7,3,"#70431f");rect(c,-3,-3,7,5,"#8a5529");if(lit){rect(c,-3,-9,7,7,"#ff5a16");rect(c,-2,-12,4,5,"#ff5a16");rect(c,-1,-14,2,4,"#ff5a16");rect(c,-2,-8,5,5,"#ffca42");rect(c,-1,-11,3,4,"#ffca42");rect(c,-1,-8,2,4,"#fff2a0");rect(c,0,-11,1,3,"#fff2a0");}else{rect(c,-3,-9,7,6,"#382c29");rect(c,-2,-12,4,4,"#292329");rect(c,-1,-14,2,3,"#292329");}c.restore();}
-function drawDarkness(){darknessCtx.clearRect(0,0,V_WIDTH,V_HEIGHT);rect(darknessCtx,0,0,V_WIDTH,V_HEIGHT,"#000");if(globalLight){darknessCtx.clearRect(0,0,V_WIDTH,V_HEIGHT);return;}if(!torchTaken||!flashlightOn)return;torchAnimation=Math.min(1,torchAnimation+.035);const radius=38*torchAnimation;const reveal=darknessCtx.createRadialGradient(torchX,torchY,1,torchX,torchY,radius);reveal.addColorStop(0,"rgba(0,0,0,1)");reveal.addColorStop(.45,"rgba(0,0,0,.95)");reveal.addColorStop(.72,"rgba(0,0,0,.65)");reveal.addColorStop(1,"rgba(0,0,0,0)");darknessCtx.save();darknessCtx.globalCompositeOperation="destination-out";darknessCtx.fillStyle=reveal;darknessCtx.fillRect(0,0,V_WIDTH,V_HEIGHT);darknessCtx.restore();}
-function drawTorchGlow(c){if(!torchTaken||!flashlightOn||globalLight)return;const glow=c.createRadialGradient(torchX,torchY,1,torchX,torchY,29);glow.addColorStop(0,"rgba(255,180,85,.17)");glow.addColorStop(.5,"rgba(255,140,50,.07)");glow.addColorStop(1,"rgba(255,100,20,0)");c.save();c.globalCompositeOperation="lighter";c.fillStyle=glow;c.fillRect(0,0,V_WIDTH,V_HEIGHT);c.restore();}
-function updateLightSwitch(){if(!switchFlickering)return;switchFlickerTime++;if(switchFlickerTime>=48){switchFlickering=false;switchActivated=true;globalLight=true;globalLightFade=0;}}
-function updatePosition(e){const r=canvas.getBoundingClientRect();mouseX=(e.clientX-r.left)*V_WIDTH/r.width;mouseY=(e.clientY-r.top)*V_HEIGHT/r.height;torchX=mouseX;torchY=mouseY;}
+
+// DIBUJO PIXEL ART
+function rect(c,x,y,w,h,color) {
+  c.fillStyle = color;
+  c.fillRect(Math.round(x), Math.round(y), w, h);
+}
+function outline(c,x,y,w,h,color) {
+  rect(c,x,y,w,1,color);
+  rect(c,x,y+h-1,w,1,color);
+  rect(c,x,y,1,h,color);
+  rect(c,x+w-1,y,1,h,color);
+}
+
+// PISO
+function drawCheckerFloor(c) {
+  const tile = 12, floorStart = 132;
+  rect(c, 0, floorStart - 3, V_WIDTH, 3, "#17151b");
+  for (let y = floorStart; y < V_HEIGHT; y += tile) {
+    for (let x = 0; x < V_WIDTH; x += tile) {
+      const alt = (Math.floor(x/tile) + Math.floor(y/tile)) % 2;
+      rect(c,x,y,tile,tile,alt === 0 ? "#eeeeee" : "#171717");
+    }
+  }
+  rect(c,0,132,V_WIDTH,2,"#080808");
+  rect(c,0,232,V_WIDTH,8,"#090909");
+}
+
+// PARED
+function drawWall(c) {
+  const cx = centerX();
+  rect(c,0,0,V_WIDTH,134,"#342b32");
+  rect(c,0,0,V_WIDTH,8,"#17151c");
+  rect(c,0,12,V_WIDTH,3,"#493b43");
+  rect(c,0,119,V_WIDTH,5,"#17141a");
+  rect(c,0,124,V_WIDTH,8,"#514047");
+
+  for (let x=8; x<V_WIDTH; x+=32) {
+    rect(c,x,15,2,104,"#29232a");
+    rect(c,x+2,15,1,104,"#44343c");
+  }
+  rect(c,0,0,5,134,"#17141a");
+  rect(c,V_WIDTH-5,0,5,134,"#17141a");
+  rect(c,cx-19,8,38,3,"#777078");
+  rect(c,cx-14,11,28,2,"#d4c2a1");
+}
+
+// POSTERS
+function drawPoster(c,x,y,type) {
+  rect(c,x+2,y+2,24,31,"#151219");
+  rect(c,x,y,24,31,"#d4c6a5");
+  outline(c,x,y,24,31,"#493b35");
+  rect(c,x+3,y+3,18,3,"#8b3e43");
+
+  if (type===0) {
+    rect(c,x+7,y+10,10,10,"#75452d");
+    rect(c,x+6,y+8,12,5,"#53301f");
+    rect(c,x+8,y+14,2,2,"#fff");
+    rect(c,x+14,y+14,2,2,"#fff");
+    rect(c,x+9,y+15,1,1,"#111");
+    rect(c,x+15,y+15,1,1,"#111");
+    rect(c,x+9,y+19,7,2,"#e9d0a5");
+    rect(c,x+11,y+6,3,3,"#27202a");
+  } else {
+    rect(c,x+7,y+11,10,10,"#514a8d");
+    rect(c,x+7,y+5,3,8,"#514a8d");
+    rect(c,x+14,y+5,3,8,"#514a8d");
+    rect(c,x+8,y+14,2,2,"#fff");
+    rect(c,x+14,y+14,2,2,"#fff");
+    rect(c,x+10,y+19,5,2,"#d9b5b5");
+  }
+  rect(c,x+4,y+25,16,1,"#4d403b");
+  rect(c,x+6,y+27,12,1,"#4d403b");
+}
+
+// PUERTAS
+function drawDoor(c,x,y,w,h,side) {
+  rect(c,x-3,y-3,w+6,h+6,"#111015");
+  rect(c,x,y,w,h,"#51444a");
+  rect(c,x+3,y+3,w-6,h-6,"#17151c");
+  rect(c,x+6,y+5,w-12,h-10,"#40363b");
+  rect(c,x+9,y+8,w-18,h-16,"#29242b");
+  outline(c,x+9,y+11,w-18,20,"#63535a");
+  outline(c,x+9,y+36,w-18,20,"#63535a");
+  rect(c,x+4,y+h-13,w-8,3,"#85818a");
+  rect(c,x+6,y+h-10,w-12,2,"#302a30");
+
+  if (side==="left") rect(c,x+w-10,y+43,3,6,"#d3b66c");
+  else rect(c,x+7,y+43,3,6,"#d3b66c");
+
+  rect(c,x+w/2-3,y+5,6,3,"#a22b32");
+  rect(c,x+3,y+3,2,2,"#a49ba0");
+  rect(c,x+w-5,y+3,2,2,"#a49ba0");
+}
+
+// FOXY
+function drawFoxy(c,cx,cy) {
+  rect(c,cx-32,cy-19,64,39,"#090b12");
+  rect(c,cx-34,cy-22,7,44,"#61242b");
+  rect(c,cx+27,cy-22,7,44,"#61242b");
+  rect(c,cx-30,cy-18,5,35,"#8c3437");
+  rect(c,cx+25,cy-18,5,35,"#8c3437");
+
+  rect(c,cx-16,cy-13,32,29,"#873c27");
+  rect(c,cx-19,cy-9,38,20,"#9f4a2d");
+
+  rect(c,cx-17,cy-23,9,15,"#7c3026");
+  rect(c,cx-15,cy-21,5,10,"#c36c43");
+  rect(c,cx+8,cy-23,9,15,"#7c3026");
+  rect(c,cx+10,cy-21,5,10,"#c36c43");
+
+  // Parche
+  rect(c,cx-17,cy-13,12,12,"#17151b");
+  rect(c,cx-19,cy-11,14,3,"#17151b");
+  rect(c,cx-9,cy-3,3,7,"#17151b");
+
+  // Ojo que sigue al cursor
+  let lx = mouseX-cx, ly = mouseY-cy;
+  const d = Math.max(1,Math.hypot(lx,ly));
+  lx = lx/d*3;
+  ly = ly/d*3;
+
+  rect(c,cx+4,cy-11,10,10,"#f0dfbd");
+  rect(c,cx+7+Math.round(lx),cy-8+Math.round(ly),4,5,"#d52d20");
+  rect(c,cx+8+Math.round(lx),cy-7+Math.round(ly),2,2,"#fff");
+
+  rect(c,cx-5,cy+3,19,9,"#d5a17a");
+  rect(c,cx+1,cy+1,7,5,"#262027");
+  rect(c,cx+2,cy+2,5,3,"#09090b");
+  rect(c,cx-4,cy+12,5,4,"#eee4ce");
+  rect(c,cx+3,cy+12,5,4,"#eee4ce");
+  rect(c,cx+10,cy+12,4,3,"#eee4ce");
+  rect(c,cx-16,cy+4,4,6,"#59291f");
+  rect(c,cx+15,cy+5,4,6,"#59291f");
+  rect(c,cx-13,cy+17,26,7,"#683027");
+}
+
+function drawWindow(c) {
+  const cx=centerX(), cy=64;
+  rect(c,cx-39,cy-26,78,55,"#111016");
+  rect(c,cx-36,cy-23,72,49,"#77717a");
+  rect(c,cx-33,cy-20,66,43,"#080b12");
+  drawFoxy(c,cx,cy-1);
+  outline(c,cx-39,cy-26,78,55,"#a59a9a");
+  rect(c,cx-40,cy-27,80,3,"#c4b6ad");
+  rect(c,cx-40,cy+26,80,3,"#71636b");
+  rect(c,cx-2,cy-23,3,47,"#77717a");
+}
+
+// MUEBLES
+function drawCabinet(c,x,y,w,h) {
+  rect(c,x+2,y+3,w,h,"#100f14");
+  rect(c,x,y,w,h,"#504044");
+  rect(c,x+3,y+3,w-6,h-6,"#342a30");
+  rect(c,x+4,y+4,w-8,3,"#78605b");
+  outline(c,x+5,y+10,w-10,14,"#17141a");
+  outline(c,x+5,y+29,w-10,14,"#17141a");
+  rect(c,x+w/2-2,y+16,4,2,"#c6b28b");
+  rect(c,x+w/2-2,y+35,4,2,"#c6b28b");
+  rect(c,x+4,y+h,4,5,"#17151b");
+  rect(c,x+w-8,y+h,4,5,"#17151b");
+}
+function drawSmallTable(c,x,y) {
+  rect(c,x,y,32,4,"#886344");
+  rect(c,x+2,y+4,28,2,"#4d3329");
+  rect(c,x+3,y+6,3,13,"#292027");
+  rect(c,x+26,y+6,3,13,"#292027");
+  rect(c,x+10,y-5,7,5,"#ded5c5");
+  rect(c,x+17,y-4,3,3,"#ded5c5");
+  rect(c,x+11,y-4,5,2,"#372a2c");
+}
+
+// TELÉFONO Y ESCRITORIO
+function drawPhone(c,x,y) {
+  rect(c,x,y+7,18,9,"#17151b");
+  rect(c,x+2,y+4,14,5,"#3c3b40");
+  rect(c,x+1,y+1,16,3,"#17151b");
+  rect(c,x+2,y,3,4,"#252329");
+  rect(c,x+13,y,3,4,"#252329");
+
+  for(let yy=0;yy<2;yy++) {
+    for(let xx=0;xx<3;xx++) {
+      rect(c,x+4+xx*4,y+8+yy*3,2,1,"#b6a6a0");
+    }
+  }
+  rect(c,x+17,y+2,2,2,"#111");
+  rect(c,x+19,y+4,2,5,"#111");
+}
+
+function drawDesk(c) {
+  const cx=centerX();
+
+  rect(c,cx-61,188,122,8,"#09090c");
+  rect(c,cx-49,181,6,39,"#302329");
+  rect(c,cx+43,181,6,39,"#302329");
+  rect(c,cx-57,178,114,34,"#4a302b");
+  rect(c,cx-54,181,108,27,"#694537");
+  rect(c,cx-59,174,118,6,"#a8794f");
+  rect(c,cx-59,174,118,2,"#d3a16b");
+
+  outline(c,cx-43,185,29,15,"#2b2025");
+  outline(c,cx+14,185,29,15,"#2b2025");
+  rect(c,cx-31,191,5,2,"#b49a70");
+  rect(c,cx+26,191,5,2,"#b49a70");
+
+  drawPhone(c,cx-39,157);
+
+  rect(c,cx-9,166,18,7,"#e0d6c2");
+  rect(c,cx-7,168,13,1,"#918b83");
+  rect(c,cx-6,170,10,1,"#918b83");
+
+  rect(c,cx+17,166,2,9,"#d7a33c");
+  rect(c,cx+17,164,2,2,"#a94b3b");
+
+  rect(c,cx+26,151,16,3,"#34343a");
+  rect(c,cx+32,145,4,8,"#55565b");
+  rect(c,cx+27,147,13,3,"#55565b");
+  rect(c,cx+32,148,4,4,"#17171d");
+
+  rect(c,cx-17,202,34,7,"#25202a");
+  rect(c,cx-13,208,26,17,"#39303a");
+  rect(c,cx-18,225,36,4,"#17151b");
+}
+
+// INTERRUPTOR
+function getSwitchPosition() {
+  return {x:centerX()+78,y:105};
+}
+function drawLightSwitch(c) {
+  const s=getSwitchPosition();
+
+  rect(c,s.x-5,s.y-8,12,17,"#16131a");
+  rect(c,s.x-4,s.y-7,10,15,"#b1a5a0");
+  outline(c,s.x-4,s.y-7,10,15,"#393038");
+
+  let lit = globalLight;
+  if (switchFlickering) {
+    lit = Math.floor(switchFlickerTime/3)%2===0;
+  }
+
+  if (lit) {
+    rect(c,s.x-1,s.y-5,4,8,"#fff1a8");
+  } else {
+    rect(c,s.x-1,s.y-5,4,8,"#494149");
+    rect(c,s.x,s.y-4,2,4,"#b7a9a2");
+  }
+
+  rect(
+    c,s.x-1,s.y-11,4,2,
+    switchFlickering ? (lit ? "#fff5bd" : "#742d30") :
+    (globalLight ? "#ffeaa0" : "#742d30")
+  );
+}
+
+// OFICINA COMPLETA
+function drawOffice(c) {
+  const cx=centerX();
+
+  rect(c,0,0,V_WIDTH,V_HEIGHT,"#17141b");
+  drawWall(c);
+
+  drawDoor(c,7,46,34,78,"left");
+  drawDoor(c,V_WIDTH-41,46,34,78,"right");
+
+  drawPoster(c,cx-91,38,0);
+  drawPoster(c,cx+65,38,1);
+
+  drawWindow(c);
+
+  drawCabinet(c,48,104,31,39);
+  drawCabinet(c,V_WIDTH-79,104,31,39);
+
+  drawSmallTable(c,49,151);
+  drawSmallTable(c,V_WIDTH-81,151);
+
+  drawCheckerFloor(c);
+
+  drawDesk(c);
+  drawLightSwitch(c);
+
+  rect(c,cx-5,132,10,2,"#222027");
+  rect(c,0,130,4,10,"#16131a");
+  rect(c,V_WIDTH-4,130,4,10,"#16131a");
+}
+
+// LINTERNA
+function drawTorch(c,x,y,scale=.65,lit=true) {
+  c.save();
+  c.translate(Math.round(x),Math.round(y));
+  c.scale(scale,scale);
+
+  rect(c,-2,1,5,15,"#603719");
+  rect(c,-1,3,2,11,"#a86b32");
+  rect(c,-3,13,7,3,"#70431f");
+  rect(c,-3,-3,7,5,"#8a5529");
+
+  if(lit) {
+    rect(c,-3,-9,7,7,"#ff5a16");
+    rect(c,-2,-12,4,5,"#ff5a16");
+    rect(c,-1,-14,2,4,"#ff5a16");
+    rect(c,-2,-8,5,5,"#ffca42");
+    rect(c,-1,-11,3,4,"#ffca42");
+    rect(c,-1,-8,2,4,"#fff2a0");
+    rect(c,0,-11,1,3,"#fff2a0");
+  } else {
+    rect(c,-3,-9,7,6,"#382c29");
+    rect(c,-2,-12,4,4,"#292329");
+    rect(c,-1,-14,2,3,"#292329");
+  }
+  c.restore();
+}
+
+// MÁSCARA DE OSCURIDAD
+function drawDarkness() {
+  darknessCtx.clearRect(0,0,V_WIDTH,V_HEIGHT);
+  rect(darknessCtx,0,0,V_WIDTH,V_HEIGHT,"#000");
+
+  if(globalLight) {
+    // La oficina completa queda visible.
+    // No se dibuja la capa negra.
+    darknessCtx.clearRect(0,0,V_WIDTH,V_HEIGHT);
+    return;
+  }
+
+  if(!torchTaken || !flashlightOn) return;
+
+  torchAnimation=Math.min(1,torchAnimation+.035);
+  const radius=38*torchAnimation;
+
+  const reveal=darknessCtx.createRadialGradient(
+    torchX,torchY,1,torchX,torchY,radius
+  );
+
+  reveal.addColorStop(0,"rgba(0,0,0,1)");
+  reveal.addColorStop(.45,"rgba(0,0,0,.95)");
+  reveal.addColorStop(.72,"rgba(0,0,0,.65)");
+  reveal.addColorStop(1,"rgba(0,0,0,0)");
+
+  darknessCtx.save();
+  darknessCtx.globalCompositeOperation="destination-out";
+  darknessCtx.fillStyle=reveal;
+  darknessCtx.fillRect(0,0,V_WIDTH,V_HEIGHT);
+  darknessCtx.restore();
+}
+
+function drawTorchGlow(c) {
+  if(!torchTaken || !flashlightOn || globalLight) return;
+
+  const glow=c.createRadialGradient(
+    torchX,torchY,1,torchX,torchY,29
+  );
+  glow.addColorStop(0,"rgba(255,180,85,.17)");
+  glow.addColorStop(.5,"rgba(255,140,50,.07)");
+  glow.addColorStop(1,"rgba(255,100,20,0)");
+
+  c.save();
+  c.globalCompositeOperation="lighter";
+  c.fillStyle=glow;
+  c.fillRect(0,0,V_WIDTH,V_HEIGHT);
+  c.restore();
+}
+
+// INTERRUPTOR Y TRANSICIÓN DE LUZ
+function updateLightSwitch() {
+  if(!switchFlickering) return;
+
+  switchFlickerTime++;
+
+  if(switchFlickerTime>=48) {
+    switchFlickering=false;
+    switchActivated=true;
+    globalLight=true;
+    globalLightFade=0;
+  }
+}
+
+// POSICIÓN DEL PUNTERO
+function updatePosition(e) {
+  const r=canvas.getBoundingClientRect();
+  mouseX=(e.clientX-r.left)*V_WIDTH/r.width;
+  mouseY=(e.clientY-r.top)*V_HEIGHT/r.height;
+  torchX=mouseX;
+  torchY=mouseY;
+}
 canvas.addEventListener("pointermove",updatePosition);
-canvas.addEventListener("pointerdown",e=>{updatePosition(e);if(currentState==="DARK_ROOM"&&!torchTaken){const dx=torchX-(V_WIDTH-18),dy=torchY-24;if(Math.hypot(dx,dy)<13){torchTaken=true;flashlightOn=true;torchAnimation=0;canvas.classList.add("torch-cursor");}return;}if(currentState==="DARK_ROOM"&&torchTaken){const s=getSwitchPosition(),nearSwitch=Math.abs(torchX-s.x)<8&&Math.abs(torchY-s.y)<11,switchVisible=globalLight||(flashlightOn&&Math.hypot(torchX-s.x,torchY-s.y)<38);if(nearSwitch&&switchVisible&&!switchActivated&&!switchFlickering){switchFlickering=true;switchFlickerTime=0;return;}if(!switchFlickering)flashlightOn=!flashlightOn;return;}if(currentState!=="FLOATING")return;const distance=Math.hypot(mouseX-letter.x,mouseY-letter.y);if(distance<Math.max(letter.width,letter.height)*1.5)currentState="MOVING_TO_CENTER";});
-function drawDarkRoom(c){drawOffice(c);updateLightSwitch();if(globalLight){globalLightFade=Math.min(1,globalLightFade+.035);c.save();c.globalAlpha=globalLightFade;rect(c,0,0,V_WIDTH,V_HEIGHT,"rgba(255,224,174,.17)");c.restore();}else{drawDarkness();c.drawImage(darknessCanvas,0,0);drawTorchGlow(c);}if(torchTaken){const flicker=.96+Math.sin(Date.now()/90)*.04;drawTorch(c,torchX,torchY,.65*flicker,flashlightOn&&!globalLight);}else drawTorch(c,V_WIDTH-18,24,.85,true);}
-function render(){if(currentState==="DARK_ROOM")drawDarkRoom(b);else{b.fillStyle="#ffb6c1";b.fillRect(0,0,V_WIDTH,V_HEIGHT);stars.forEach(s=>{s.update();s.draw(b);});letter.update();letter.draw(b);if(currentState==="WARP_TRANSITION")drawWarpEffect(b);}ctx.imageSmoothingEnabled=false;ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(buffer,0,0,V_WIDTH,V_HEIGHT,0,0,canvas.width,canvas.height);requestAnimationFrame(render);}
+
+// INTERACCIONES
+canvas.addEventListener("pointerdown",e=>{
+  updatePosition(e);
+
+  if(currentState==="DARK_ROOM" && !torchTaken) {
+    const dx=torchX-(V_WIDTH-18);
+    const dy=torchY-24;
+
+    if(Math.hypot(dx,dy)<13) {
+      torchTaken=true;
+      flashlightOn=true;
+      torchAnimation=0;
+      canvas.classList.add("torch-cursor");
+    }
+    return;
+  }
+
+  if(currentState==="DARK_ROOM" && torchTaken) {
+    const s=getSwitchPosition();
+
+    const nearSwitch =
+      Math.abs(torchX-s.x)<8 &&
+      Math.abs(torchY-s.y)<11;
+
+    const switchVisible =
+      globalLight ||
+      (flashlightOn && Math.hypot(torchX-s.x,torchY-s.y)<38);
+
+    if(
+      nearSwitch &&
+      switchVisible &&
+      !switchActivated &&
+      !switchFlickering
+    ) {
+      switchFlickering=true;
+      switchFlickerTime=0;
+      return;
+    }
+
+    // La linterna siempre puede alternarse.
+    // Incluso después de encender la luz general.
+    if(!switchFlickering) {
+      flashlightOn=!flashlightOn;
+    }
+    return;
+  }
+
+  if(currentState!=="FLOATING") return;
+
+  const distance=Math.hypot(
+    mouseX-letter.x,
+    mouseY-letter.y
+  );
+
+  if(distance<Math.max(letter.width,letter.height)*1.5) {
+    currentState="MOVING_TO_CENTER";
+  }
+});
+
+// DIBUJAR HABITACIÓN
+function drawDarkRoom(c) {
+  drawOffice(c);
+
+  updateLightSwitch();
+
+  if(globalLight) {
+    // Iluminación completa con una breve subida de intensidad
+    globalLightFade=Math.min(1,globalLightFade+.035);
+
+    c.save();
+    c.globalAlpha=globalLightFade;
+    rect(c,0,0,V_WIDTH,V_HEIGHT,"rgba(255,224,174,.17)");
+    c.restore();
+  } else {
+    drawDarkness();
+    c.drawImage(darknessCanvas,0,0);
+    drawTorchGlow(c);
+  }
+
+  if(torchTaken) {
+    const flicker=.96+Math.sin(Date.now()/90)*.04;
+    drawTorch(
+      c,
+      torchX,
+      torchY,
+      .65*flicker,
+      flashlightOn && !globalLight
+    );
+  } else {
+    drawTorch(c,V_WIDTH-18,24,.85,true);
+  }
+}
+
+// RENDER
+function render() {
+  if(currentState==="DARK_ROOM") {
+    drawDarkRoom(b);
+  } else {
+    b.fillStyle="#ffb6c1";
+    b.fillRect(0,0,V_WIDTH,V_HEIGHT);
+
+    stars.forEach(s=>{
+      s.update();
+      s.draw(b);
+    });
+
+    letter.update();
+    letter.draw(b);
+
+    if(currentState==="WARP_TRANSITION") {
+      drawWarpEffect(b);
+    }
+  }
+
+  ctx.imageSmoothingEnabled=false;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  ctx.drawImage(
+    buffer,0,0,V_WIDTH,V_HEIGHT,
+    0,0,canvas.width,canvas.height
+  );
+
+  requestAnimationFrame(render);
+}
+
 requestAnimationFrame(render);
 </script>
 </body>
